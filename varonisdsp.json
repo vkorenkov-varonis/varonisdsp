@@ -1112,9 +1112,13 @@
         }
     ],
     "pip3_dependencies": {
-        "wheel": [
-            {"module": "requests_ntlm", "input_file": "wheels/requests_ntlm-1.1.0-py2.py3-none-any.whl"},
-            {"module": "dateparser", "input_file": "wheels/dateparser-1.1.6-py2.py3-none-any.whl"}
+        "pypi": [
+            {
+                "module": "requests_ntlm"
+            },
+            {
+                "module": "dateparser"
+            }
          ]
     },
     "directory": "varonisdsp_27a2105a-4521-434e-8417-773b8b02f99b",
