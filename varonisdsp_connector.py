@@ -25,6 +25,19 @@ import varonisdsp_tools as tools
 from varonisdsp_consts import *
 
 
+VDSP_ALERT_STATUSES = {'open': 1, 'under investigation': 2, 'closed': 3}
+VDSP_ALERT_SEVERITIES = ['high', 'medium', 'low']
+VDSP_CLOSE_REASONS = {
+    'none': 0,
+    'resolved': 1,
+    'misconfiguration': 2,
+    'threat model disabled or deleted': 3,
+    'account misclassification': 4,
+    'legitimate activity': 5,
+    'other': 6
+}
+
+
 class RetVal(tuple):
 
     def __new__(cls, val1, val2=None):

@@ -11,17 +11,6 @@ VDSP_NON_EXISTENT_SID = -1000
 VDSP_MAX_ALERTS = 50
 VDSP_MAX_ALERTED_EVENTS = 5000
 VDSP_THREAT_MODEL_ENUM_ID = 5821
-VDSP_ALERT_STATUSES = {'open': 1, 'under investigation': 2, 'closed': 3}
-VDSP_ALERT_SEVERITIES = ['high', 'medium', 'low']
-VDSP_CLOSE_REASONS = {
-    'none': 0,
-    'resolved': 1,
-    'misconfiguration': 2,
-    'threat model disabled or deleted': 3,
-    'account misclassification': 4,
-    'legitimate activity': 5,
-    'other': 6
-}
 VDSP_DISPLAY_NAME_KEY = 'DisplayName'
 VDSP_SAM_ACCOUNT_NAME_KEY = 'SAMAccountName'
 VDSP_EMAIL_KEY = 'Email'
