@@ -24,6 +24,7 @@ from requests_ntlm import HttpNtlmAuth
 import varonisdsp_tools as tools
 from varonisdsp_consts import *
 
+VDSP_NON_EXISTENT_SID = -1000
 VDSP_ALERT_STATUSES = {'open': 1, 'under investigation': 2, 'closed': 3}
 VDSP_ALERT_SEVERITIES = ['high', 'medium', 'low']
 VDSP_CLOSE_REASONS = {
