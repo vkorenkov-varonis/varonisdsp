@@ -773,7 +773,8 @@ class VaronisDSPConnector(BaseConnector):
                 ret_val, message, container_responses = self.save_containers(containers)
 
                 for cr in container_responses:
-                    self.save_progress('Save container returns, ret_val: {0}, message: {1}, id: {2}'.format(cr['success'], cr['message'], cr['id']))
+                    self.save_progress('Save container returns, ret_val: {0}, message: {1}, id: {2}'
+                        .format(cr['success'], cr['message'], cr['id']))
 
                 if phantom.is_fail(ret_val):
                     self.save_progress(f'On poll Failed while saving containers. Message: {message}')
