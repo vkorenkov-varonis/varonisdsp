@@ -1,7 +1,9 @@
 import unittest
 from unittest.mock import MagicMock
-from varonisdsp_connector import VaronisDSPConnector
+
 from phantom.action_result import ActionResult
+
+from varonisdsp_connector import VaronisDSPConnector
 from varonisdsp_consts import *
 
 

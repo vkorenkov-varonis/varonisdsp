@@ -7,21 +7,22 @@
 # Python 3 Compatibility imports
 from __future__ import print_function, unicode_literals
 
-# Phantom App imports
-import phantom.app as phantom
-from phantom.base_connector import BaseConnector
-from phantom.action_result import ActionResult
-
-import requests
 import json
 import time
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+# Phantom App imports
+import phantom.app as phantom
+import requests
 from bs4 import BeautifulSoup
+from phantom.action_result import ActionResult
+from phantom.base_connector import BaseConnector
 from requests.models import Response
 from requests_ntlm import HttpNtlmAuth
-from typing import Dict, Any, List, Optional
-from varonisdsp_consts import *
+
 import varonisdsp_tools as tools
+from varonisdsp_consts import *
 
 
 class RetVal(tuple):
