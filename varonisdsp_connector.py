@@ -580,7 +580,7 @@ class VaronisDSPConnector(BaseConnector):
             self.debug_print('Request completed', ret_val)
 
             if phantom.is_fail(ret_val):
-                self.save_progress("Get Alerts Failed.")
+                self.error_print("Get alerts failed.")
                 return action_result.get_status()
 
             for res in results:
@@ -617,6 +617,7 @@ class VaronisDSPConnector(BaseConnector):
             ret_val, response = self._update_alert_status(action_result, query)
 
             if phantom.is_fail(ret_val):
+                self.error_print("Update alert status failed.")
                 return action_result.get_status()
 
             action_result.add_data(response)
@@ -656,6 +657,7 @@ class VaronisDSPConnector(BaseConnector):
             ret_val, response = self._update_alert_status(action_result, query)
 
             if phantom.is_fail(ret_val):
+                self.error_print("Close alert failed.")
                 return action_result.get_status()
 
             action_result.add_data(response)
@@ -691,6 +693,7 @@ class VaronisDSPConnector(BaseConnector):
                 params=request_params)
 
             if phantom.is_fail(ret_val):
+                self.error_print("Get alerted events failed.")
                 return action_result.get_status()
 
             for res in results:
