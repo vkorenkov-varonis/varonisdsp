@@ -1,0 +1,4 @@
+beautifulsoup4==4.8.1
+dateparser
+requests==2.25.1
+requests_ntlm
