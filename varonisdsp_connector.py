@@ -23,8 +23,8 @@
 from __future__ import print_function, unicode_literals
 
 import json
-import time
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
