@@ -451,6 +451,26 @@ class VaronisDSPConnector(BaseConnector):
         container['status'] = data['Status']
         container['severity'] = data['Severity']
         container['start_time'] = f"{data['EventUTC']}Z"
+        container['custom_fields'] = {
+            'category': data.get('Category', None),
+            'department': data.get('By', {}).get('Department', None),
+            'sam_account_name': data.get('By', {}).get('SamAccountName', None),
+            'privileged_account_type': data.get('By', {}).get('PrivilegedAccountType', None),
+            'asset': data.get('On', {}).get('Asset', None),
+            'platform': data.get('On', {}).get('Platform', None),
+            'file_server_or_domain': data.get('On', {}).get('FileServerOrDomain', None),
+            'contains_flagged_data': data.get('On', {}).get('ContainsFlaggedData', None),
+            'contains_sensitive_data': data.get('On', {}).get('ContainsSensitiveData', None),
+            'country': data.get('Country', None),
+            'state': data.get('State', None),
+            'device_name': data.get('Device', {}).get('Name', None),
+            'ip_threat_types': data.get('Device', {}).get('IPThreatTypes', None),
+            'contain_malicious_external_ip': data.get('Device', {}).get('ContainMaliciousExternalIP', None),
+            'blacklist_location': data.get('BlacklistLocation', None),
+            'close_reason': data.get('CloseReason', None),
+            'user_name': data.get('UserName', None),
+            'abnormal_location': data.get('AbnormalLocation', None),
+        }
         container['data'] = data
         return container
 
