@@ -1,5 +1,6 @@
+from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 import dateparser
 
@@ -87,7 +88,7 @@ def arg_to_datetime(interval: Any, is_utc=True) -> Optional[datetime]:
     raise ValueError('"{}" is not a valid date+'.format(interval))
 
 
-def argToList(arg, separator=','):
+def multi_value_to_string_list(arg, separator=','):
     """
     Converts a string representation of args to a python list
 
@@ -116,3 +117,81 @@ def strEqual(text1: str, text2: str) -> bool:
         return False
 
     return text1.casefold() == text2.casefold()
+
+
+def parse_bool(value: str) -> Optional[bool]:
+    if value:
+        value = value.lower()
+        if value == 'yes':
+            return True
+        if value == 'no':
+            return False
+        if value == 'true':
+            return True
+        if value == 'false':
+            return False
+    return None
+
+
+def multi_value_to_boolean_list(multi_value: str) -> Optional[List[Optional[bool]]]:
+    if not multi_value or multi_value.isspace():
+        return None
+    return [parse_bool(value) for value in multi_value.split(',')]
+
+
+def convert_json_to_key_value(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    result = []
+    for row in data["rows"]:
+        obj = {}
+        for col, val in zip(data["columns"], row):
+            obj[col] = val
+        result.append(obj)
+    return result
+
+
+def new_construct(obj: Any) -> Any:
+    if obj is None:
+        return None
+    return [] if isinstance(obj, list) else {}
+
+
+def isliteral(obj: Any):
+    return isinstance(obj, (int, float, str, bool))
+
+
+def object_to_dict(obj):
+    result = new_construct(obj)
+    queue = deque([(id(obj), obj, result)])
+    processed = set()
+
+    while queue:
+        obj_id, obj, constructed_obj = queue.pop()
+        if obj_id in processed:
+            continue
+        processed.add(obj_id)
+
+        if hasattr(obj, "__dict__"):
+            obj = vars(obj)
+
+        if isinstance(obj, list):
+            for val in obj:
+                if isliteral(val):
+                    constructed_obj.append(val)
+                elif isinstance(val, datetime):
+                    constructed_obj.append(val.strftime('%Y-%m-%dT%H:%M:%S'))
+                else:
+                    new_obj = new_construct(val)
+                    queue.append((id(val), val, new_obj))
+                    constructed_obj.append(new_obj)
+        elif isinstance(obj, dict):
+            for key, val in obj.items():
+                if isliteral(val):
+                    constructed_obj[key] = val
+                elif isinstance(val, datetime):
+                    constructed_obj[key] = val.strftime('%Y-%m-%dT%H:%M:%S')
+                else:
+                    new_obj = new_construct(val)
+                    constructed_obj[key] = new_obj
+                    queue.append((id(val), val, new_obj))
+
+    return result

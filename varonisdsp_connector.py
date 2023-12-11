@@ -8,14 +8,14 @@
 # distribution, in whole or in part, is forbidden except by express
 # written permission of Varonis DSP.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
+# Licensed under the Apache License, Version 2.0 (the 'License');
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software distributed under
-# the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+# the License is distributed on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
 # either express or implied. See the License for the specific language governing permissions
 # and limitations under the License.
 
@@ -25,7 +25,7 @@ from __future__ import print_function, unicode_literals
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 # Phantom App imports
@@ -34,15 +34,19 @@ import requests
 from bs4 import BeautifulSoup
 from phantom.action_result import ActionResult
 from phantom.base_connector import BaseConnector
+from requests.adapters import HTTPAdapter
 from requests.models import Response
-from requests_ntlm import HttpNtlmAuth
+from urllib3 import Retry
 
 import varonisdsp_tools as tools
 from varonisdsp_consts import *
+from varonisdsp_search import (SearchAlertObjectMapper, SearchEventObjectMapper, SearchMapper, SearchRequest, create_alert_request,
+                               create_alerted_events_request, get_query_range)
 
-VDSP_NON_EXISTENT_SID = -1000
 VDSP_ALERT_STATUSES = {'open': 1, 'under investigation': 2, 'closed': 3}
 VDSP_ALERT_SEVERITIES = ['high', 'medium', 'low']
+VDSP_REQUEST_RETRIES = 30
+VDSP_HTTP_STATUS_WHITE_LIST = [ 304, 206 ]
 VDSP_CLOSE_REASONS = {
     'none': 0,
     'resolved': 1,
@@ -56,16 +60,16 @@ VDSP_CLOSE_REASONS = {
 
 class RetVal(tuple):
 
-    def __new__(cls, val1, val2=None):
+    def __new__(cls, val1: bool, val2=None):
         return tuple.__new__(RetVal, (val1, val2))
 
 
-class VaronisDSPConnector(BaseConnector):
+class VaronisDspSaasConnector(BaseConnector):
 
     def __init__(self):
 
         # Call the BaseConnectors init first
-        super(VaronisDSPConnector, self).__init__()
+        super(VaronisDspSaasConnector, self).__init__()
 
         self._state: Dict[str, Any] = None
         self._session = None
@@ -85,7 +89,7 @@ class VaronisDSPConnector(BaseConnector):
         return RetVal(
             action_result.set_status(
                 phantom.APP_ERROR,
-                "Empty response and no information in the header"),
+                'Empty response and no information in the header'),
             None)
 
     def _process_html_response(self, response, action_result):
@@ -93,15 +97,15 @@ class VaronisDSPConnector(BaseConnector):
         status_code = response.status_code
 
         try:
-            soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(response.text, 'html.parser')
             error_text = soup.text
             split_lines = error_text.split('\n')
             split_lines = [x.strip() for x in split_lines if x.strip()]
             error_text = '\n'.join(split_lines)
         except:
-            error_text = "Cannot parse error details"
+            error_text = 'Cannot parse error details'
 
-        message = "Status Code: {0}. Data from server:\n{1}\n".format(
+        message = 'Status Code: {0}. Data from server:\n{1}\n'.format(
             status_code, error_text)
 
         message = message.replace(u'{', '{{').replace(u'}', '}}')
@@ -115,7 +119,7 @@ class VaronisDSPConnector(BaseConnector):
             return RetVal(
                 action_result.set_status(
                     phantom.APP_ERROR,
-                    "Unable to parse JSON response. Error: {0}".format(str(e))),
+                    'Unable to parse JSON response. Error: {0}'.format(str(e))),
                 None)
 
         # Please specify the status codes here
@@ -123,7 +127,7 @@ class VaronisDSPConnector(BaseConnector):
             return RetVal(phantom.APP_SUCCESS, resp_json)
 
         # You should process the error returned in the json
-        message = "Error from server. Status Code: {0} Data from server: {1}".format(
+        message = 'Error from server. Status Code: {0} Data from server: {1}'.format(
             r.status_code,
             r.text.replace(u'{', '{{').replace(u'}', '}}'))
 
@@ -212,134 +216,76 @@ class VaronisDSPConnector(BaseConnector):
             return RetVal(
                 action_result.set_status(
                     phantom.APP_ERROR,
-                    "Error Connecting to server. Details: {0}".format(str(e))),
+                    'Error Connecting to server. Details: {0}'.format(str(e))),
                 None)
 
         return self._process_response(resp, action_result)
 
-    def _authorize(self, username: str, password: str, url: str) -> Dict[str, Any]:
-        response = self._http_request(url)
-        response = response.json()
-        auth_endpoint = response['authEndpoint']
+    def _make_search_call(self,
+                          action_result,
+                          query: SearchRequest,
+                          result_mapper: SearchMapper,
+                          count: int,
+                          page: int = 1,) -> RetVal:
+        self.debug_print('Search query payload: ', query.to_dict())
 
-        ntlm = HttpNtlmAuth(username, password)
-        response = self._http_request(method='POST',
-                                      full_url=auth_endpoint,
-                                      auth=ntlm,
-                                      data=VDSP_AUTH_DATA)
-        response = response.json()
+        ret_val, results = self._make_rest_call(action_result=action_result,
+                                                url_suffix=VDSP_SEARCH_ENDPOINT,
+                                                method='POST',
+                                                json=query.to_dict())
+
+        if phantom.is_fail(ret_val):
+            self.save_progress('Faild to make search query call.')
+            return action_result.get_status()
+
+        search_result_location = next(filter(lambda x: (x['dataType'] == 'rows'), results))['location']
+
+        ret_val, results = self._make_rest_call(action_result=action_result,
+                                                url_suffix=f'{VDSP_SEARCH_RESULT_ENDPOINT}/{search_result_location}',
+                                                method='GET',
+                                                params=get_query_range(count, page))
+
+        if phantom.is_fail(ret_val):
+            self.save_progress('Faild to get results of search query call.')
+            return action_result.get_status()
+
+        return ret_val, result_mapper.map(results)
+
+    def _authorize(self, api_key: str) -> Dict[str, Any]:
+        action_result = self.add_action_result(ActionResult({}))
+        headers = {
+            'x-api-key': api_key
+        }
+        ret_val, response = self._make_rest_call(action_result=action_result,
+                                        method='POST',
+                                        url_suffix=VDSP_AUTH_ENDPOINT,
+                                        data='grant_type=varonis_custom',
+                                        headers=headers)
+
+        if phantom.is_fail(ret_val):
+            self.save_progress(f'Faild to authorize on {VDSP_AUTH_ENDPOINT} endpoint.')
+            return action_result.get_status()
 
         self._state[VDSP_ACCESS_TOKEN_KEY] = response[VDSP_ACCESS_TOKEN_KEY]
         self._state[VDSP_TOKEN_TYPE_KEY] = response[VDSP_TOKEN_TYPE_KEY]
-        self._state[VDSP_EXPIRES_IN_KEY] = int(
-            time.time()) + response[VDSP_EXPIRES_IN_KEY] - VDSP_REQUEST_TIMEOUT
+        self._state[VDSP_EXPIRES_IN_KEY] =\
+            int(time.time()) + response[VDSP_EXPIRES_IN_KEY] - VDSP_REQUEST_TIMEOUT
 
-        self.debug_print("Expiration time", self._state[VDSP_EXPIRES_IN_KEY])
+        self.debug_print('Expiration time', self._state[VDSP_EXPIRES_IN_KEY])
+
         return response
 
-    def _get_users(self, search_string: str) -> List[Any]:
-        """Search users by search string
-
-        :type search_string: ``str``
-        :param search_string: search string
-
-        :return: The list of users
-        :rtype: ``Dict[str, Any]``
-        """
-        request_params: Dict[str, Any] = {}
-        request_params['columns'] = "['SamAccountName','Email','DomainName','ObjName']"
-        request_params['searchString'] = search_string
-        request_params['limit'] = 1000
-
-        response = self._http_request('api/userdata/users', params=request_params)
-        response = response.json()
-
-        return response['ResultSet']
-
-    def _get_sids(self, values: List[str], user_domain_name: Optional[str], key: str) -> List[int]:
-        """Return list of user ids
-
-        :type values: ``List[str]``
-        :param values: A list of user names
-
-        :type user_domain_name: ``str``
-        :param user_domain_name: User domain name
-
-        :type key: ``str``
-        :param key: Display name
-
-        :return: List of user ids
-        :rtype: ``List[int]``
-        """
-        sidIds: List[int] = []
-
-        if not values:
-            return sidIds
-
-        for value in values:
-            users = self._get_users(value)
-
-            for user in users:
-                if tools.strEqual(user[key], value):
-                    if (not user_domain_name or tools.strEqual(user['DomainName'], user_domain_name)):
-                        sidIds.append(user['Id'])
-
-        if len(sidIds) == 0:
-            sidIds.append(VDSP_NON_EXISTENT_SID)
-
-        return sidIds
-
-    def _get_sids_by_user_name(self, user_names: List[str],
-                               user_domain_name: str) -> List[int]:
-        """Return list of user ids
-
-        :type user_names: ``List[str]``
-        :param user_names: A list of user names
-
-        :type user_domain_name: ``str``
-        :param user_domain_name: User domain name
-
-        :return: List of user ids
-        :rtype: ``List[int]``
-        """
-        return self._get_sids(user_names, user_domain_name, VDSP_DISPLAY_NAME_KEY)
-
-    def _get_sids_by_sam(self, sam_account_names: List[str]) -> List[int]:
-        """Return list of user ids
-
-        :type sam_account_names: ``List[str]``
-        :param sam_account_names: A list of sam account names
-
-        :return: List of user ids
-        :rtype: ``List[int]``
-        """
-        return self._get_sids(sam_account_names, None, VDSP_SAM_ACCOUNT_NAME_KEY)
-
-    def _get_sids_by_email(self, emails: List[str]) -> List[int]:
-        """Return list of user ids
-
-        :type emails: ``List[str]``
-        :param emails: A list of emails
-
-        :return: List of user ids
-        :rtype: ``List[int]``
-        """
-        return self._get_sids(emails, None, VDSP_EMAIL_KEY)
-
-    def _get_alerts_params(self, threat_models: Optional[List[str]] = None,
+    def _get_alerts_payload(self, threat_models: Optional[List[str]] = None,
                            start_time: Optional[datetime] = None,
                            end_time: Optional[datetime] = None,
                            device_names: Optional[List[str]] = None,
                            last_days: Optional[int] = None,
-                           sid_ids: Optional[List[int]] = None,
-                           from_alert_id: Optional[int] = None,
+                           user_names: Optional[List[str]] = None,
+                           from_ingest_time: Optional[datetime] = None,
                            alert_statuses: Optional[List[str]] = None,
                            alert_severities: Optional[List[str]] = None,
-                           aggregate: bool = False,
-                           count: int = VDSP_MAX_ALERTS,
-                           page: int = 1,
-                           descending_order: bool = True) -> Dict[str, Any]:
-        """Get alerts parameters
+                           descending_order: bool = True) -> SearchRequest:
+        '''Get alerts parameters
 
         :type threat_models: ``Optional[List[str]]``
         :param threat_models: List of threat models to filter by
@@ -356,8 +302,8 @@ class VaronisDSPConnector(BaseConnector):
         :type last_days: ``Optional[List[int]]``
         :param last_days: Number of days you want the search to go back to
 
-        :type sid_ids: ``Optional[List[int]]``
-        :param sid_ids: List of user ids
+        :type user_names: ``Optional[List[int]]``
+        :param user_names: List of user names
 
         :type from_alert_id: ``Optional[int]``
         :param from_alert_id: Alert id to fetch from
@@ -368,61 +314,46 @@ class VaronisDSPConnector(BaseConnector):
         :type alert_severities: ``Optional[List[str]]``
         :param alert_severities: List of alert severities to filter by
 
-        :type aggregate: ``bool``
-        :param aggregate: Indicated whether agregate alert by alert id
-
-        :type count: ``int``
-        :param count: Alerts count
-
-        :type page: ``int``
-        :param page: Page number
-
         :type descendingOrder: ``bool``
         :param descendingOrder: Indicates whether alerts should be ordered in newest to oldest order
 
         :return: Parameters to be used in get alerts handler
         :rtype: ``Dict[str, Any]``
-        """
-        request_params: Dict[str, Any] = {}
+        '''
+        ingest_time_end = None
+        if from_ingest_time:
+            ingest_time_end = datetime.now()
 
-        if threat_models and len(threat_models) > 0:
-            request_params['ruleName'] = threat_models
+        payload = create_alert_request(
+            ingest_time_start=from_ingest_time,
+            ingest_time_end=ingest_time_end,
+            threat_models=threat_models,
+            start_time=start_time,
+            end_time=end_time,
+            last_days=last_days,
+            device_names=device_names,
+            users=user_names,
+            alert_statuses=alert_statuses,
+            alert_severities=alert_severities,
+            descending_order=descending_order
+        )
 
-        if start_time:
-            request_params['startTime'] = start_time.isoformat()
+        return payload
 
-        if end_time:
-            request_params['endTime'] = end_time.isoformat()
+    def _get_alerted_events_payload(self, alert_ids: List[str], descending_order: bool) -> Dict[str, Any]:
+        '''Get alerted events parameters
 
-        if device_names and len(device_names) > 0:
-            request_params['deviceName'] = device_names
+        :type alert_ids: ``List[str]``
+        :param alert_ids: List of related alerts
 
-        if last_days:
-            request_params['lastDays'] = last_days
+        :return: Parameters to be used in get alerted events handler
+        :rtype: ``Dict[str, Any]`
+        '''
+        payload = create_alerted_events_request(alert_ids, descending_order)
+        return payload
 
-        if sid_ids and len(sid_ids) > 0:
-            request_params['sidId'] = sid_ids
-
-        if from_alert_id is not None:
-            request_params['fromAlertSeqId'] = from_alert_id
-
-        if alert_statuses and len(alert_statuses) > 0:
-            request_params['status'] = alert_statuses
-
-        if alert_severities and len(alert_severities) > 0:
-            request_params['severity'] = alert_severities
-
-        request_params['descendingOrder'] = descending_order
-
-        request_params['aggregate'] = aggregate
-        request_params['offset'] = (page - 1) * count
-        request_params['maxResult'] = count
-
-        return request_params
-
-    def _update_alert_status(self, action_result, query: Dict[str,
-                                                              Any]) -> bool:
-        """Update alert status
+    def _update_alert_status(self, action_result, query: Dict[str, Any]) -> bool:
+        '''Update alert status
 
         :type query: ``Dict[str, Any]``
         :param query: Update request body
@@ -430,19 +361,11 @@ class VaronisDSPConnector(BaseConnector):
         :return: Result of execution
         :rtype: ``bool``
 
-        """
+        '''
         return self._make_rest_call(action_result,
                                     VDSP_UPDATE_ALET_STATUS_ENDPOINT,
                                     method='POST',
                                     json=query)
-
-    def _get_alerted_events_params(self, alert_id: str, page: int, count: int, descending_order=True):
-        request_params: Dict[str, Any] = {}
-        request_params['alertId'] = tools.try_convert(alert_id, lambda x: tools.argToList(x))
-        request_params['maxResults'] = count
-        request_params['offset'] = (page - 1) * count
-        request_params['descendingOrder'] = descending_order
-        return request_params
 
     def _create_container(self, data: Dict[str, Any]):
         container = dict()
@@ -476,9 +399,7 @@ class VaronisDSPConnector(BaseConnector):
 
     def _create_artifact(self, data: Dict[str, Any]):
         artifact = dict()
-        utc_time = datetime.strptime(data['UTCTime'], '%Y-%m-%dT%H:%M:%S%z') \
-                    .replace(tzinfo=timezone.utc) \
-                    .strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        utc_time = data['UTCTime']
         artifact['name'] = data['Description']
         artifact['label'] = 'event'
         artifact['source_data_identifier'] = data['ID']
@@ -491,22 +412,21 @@ class VaronisDSPConnector(BaseConnector):
     def _handle_test_connectivity(self, param):
 
         action_result = self.add_action_result(ActionResult(dict(param)))
-        self.save_progress("Connecting to endpoint")
+        self.save_progress('Connecting to endpoint')
 
         # make rest call
-        ret_val, _ = self._make_rest_call(action_result,
-                                          '/api/entitymodel/enum/5821')
+        ret_val, _ = self._make_rest_call(action_result, VDSP_TEST_CONNECTION_ENDPOINT)
 
         if phantom.is_fail(ret_val):
-            self.save_progress("Test Connectivity Failed.")
+            self.save_progress('Test Connectivity Failed.')
             return action_result.get_status()
 
         # Return success
-        self.save_progress("Test Connectivity Passed")
+        self.save_progress('Test Connectivity Passed')
         return action_result.set_status(phantom.APP_SUCCESS)
 
     def _handle_get_alerts(self, param):
-        self.save_progress("In action handler for: {0}".format(
+        self.save_progress('In action handler for: {0}'.format(
             self.get_action_identifier()))
 
         action_result = self.add_action_result(ActionResult(dict(param)))
@@ -519,18 +439,12 @@ class VaronisDSPConnector(BaseConnector):
         alert_statuses = param.get('alert_status', None)
         alert_severities = param.get('alert_severity', None)
         device_names = param.get('device_name', None)
-        user_domain_name = param.get('user_domain_name', None)
         user_names = param.get('user_name', None)
-        sam_account_names = param.get('sam_account_name', None)
-        emails = param.get('email', None)
         last_days = param.get('last_days', None)
         descending_order = param.get('descending_order', True)
 
         try:
-            user_names = tools.try_convert(user_names, lambda x: tools.argToList(x))
-            sam_account_names = tools.try_convert(sam_account_names,
-                                            lambda x: tools.argToList(x))
-            emails = tools.try_convert(emails, lambda x: tools.argToList(x))
+            user_names = tools.try_convert(user_names, lambda x: tools.multi_value_to_string_list(x))
 
             if last_days:
                 last_days = tools.try_convert(
@@ -542,30 +456,16 @@ class VaronisDSPConnector(BaseConnector):
                 if last_days <= 0:
                     raise ValueError('last_days cannot be less then 1')
 
-            if user_domain_name and (not user_names or len(user_names) == 0):
-                raise ValueError(
-                    'user_domain_name cannot be provided without user_name')
-
             if user_names and len(user_names) > VDSP_MAX_USERS_TO_SEARCH:
                 raise ValueError(
                     f'cannot provide more then {VDSP_MAX_USERS_TO_SEARCH} users'
                 )
 
-            if sam_account_names and len(sam_account_names) > VDSP_MAX_USERS_TO_SEARCH:
-                raise ValueError(
-                    f'cannot provide more then {VDSP_MAX_USERS_TO_SEARCH} sam account names'
-                )
-
-            if emails and len(emails) > VDSP_MAX_USERS_TO_SEARCH:
-                raise ValueError(
-                    f'cannot provide more then {VDSP_MAX_USERS_TO_SEARCH} emails'
-                )
-
             alert_severities = tools.try_convert(alert_severities,
-                                           lambda x: tools.argToList(x))
-            device_names = tools.try_convert(device_names, lambda x: tools.argToList(x))
+                                           lambda x: tools.multi_value_to_string_list(x))
+            device_names = tools.try_convert(device_names, lambda x: tools.multi_value_to_string_list(x))
             threat_model_names = tools.try_convert(threat_model_names,
-                                             lambda x: tools.argToList(x))
+                                             lambda x: tools.multi_value_to_string_list(x))
             max_results = tools.try_convert(
                 max_results, lambda x: int(x),
                 ValueError(f'max_results should be integer, but it is {max_results}.')
@@ -581,13 +481,10 @@ class VaronisDSPConnector(BaseConnector):
                     f'end_time should be in iso format, but it is {start_time}.'
                 ))
 
-            alert_statuses = tools.try_convert(alert_statuses, lambda x: tools.argToList(x))
+            alert_statuses = tools.try_convert(alert_statuses, lambda x: tools.multi_value_to_string_list(x))
             page = tools.try_convert(
                 page, lambda x: int(x),
                 ValueError(f'page should be integer, but it is {page}.'))
-
-            sid_ids = self._get_sids_by_email(emails) + self._get_sids_by_sam(sam_account_names) + \
-                self._get_sids_by_user_name(user_names, user_domain_name)
 
             if alert_severities:
                 for severity in alert_severities:
@@ -599,22 +496,28 @@ class VaronisDSPConnector(BaseConnector):
                     if status.lower() not in VDSP_ALERT_STATUSES.keys():
                         raise ValueError(f'There is no status {severity}.')
 
-            alert_params = self._get_alerts_params(
-                threat_model_names, start_time, end_time, device_names,
-                last_days, sid_ids, None, alert_statuses, alert_severities,
-                False, max_results, page, descending_order)
+            payload = self._get_alerts_payload(
+                threat_models=threat_model_names,
+                start_time=start_time,
+                end_time=end_time,
+                device_names=device_names,
+                last_days=last_days,
+                user_names=user_names,
+                alert_statuses=alert_statuses,
+                alert_severities=alert_severities,
+                descending_order=descending_order)
 
-            self.debug_print('Params completed', alert_params)
-
-            ret_val, results = self._make_rest_call(
+            ret_val, results = self._make_search_call(
                 action_result,
-                VDSP_GET_ALERTS_ENDPOINT,
-                params=alert_params)
+                query=payload,
+                result_mapper=SearchAlertObjectMapper(),
+                page=page,
+                count=max_results)
 
             self.debug_print('Request completed', ret_val)
 
             if phantom.is_fail(ret_val):
-                self.error_print("Get alerts failed.")
+                self.error_print('Get alerts failed.')
                 return action_result.get_status()
 
             for res in results:
@@ -627,7 +530,7 @@ class VaronisDSPConnector(BaseConnector):
         return action_result.set_status(phantom.APP_SUCCESS)
 
     def _handle_update_alert_status(self, param):
-        self.save_progress("In action handler for: {0}".format(
+        self.save_progress('In action handler for: {0}'.format(
             self.get_action_identifier()))
 
         action_result = self.add_action_result(ActionResult(dict(param)))
@@ -643,7 +546,7 @@ class VaronisDSPConnector(BaseConnector):
             status_id = VDSP_ALERT_STATUSES[status.lower()]
 
             query: Dict[str, Any] = {
-                'AlertGuids': tools.try_convert(alert_id, lambda x: tools.argToList(x)),
+                'AlertGuids': tools.try_convert(alert_id, lambda x: tools.multi_value_to_string_list(x)),
                 'closeReasonId': VDSP_CLOSE_REASONS['none'],
                 'statusId': status_id
             }
@@ -651,7 +554,7 @@ class VaronisDSPConnector(BaseConnector):
             ret_val, response = self._update_alert_status(action_result, query)
 
             if phantom.is_fail(ret_val):
-                self.error_print("Update alert status failed.")
+                self.error_print('Update alert status failed.')
                 return action_result.get_status()
 
             action_result.add_data(response)
@@ -661,7 +564,7 @@ class VaronisDSPConnector(BaseConnector):
         return action_result.set_status(phantom.APP_SUCCESS)
 
     def _handle_close_alert(self, param):
-        self.save_progress("In action handler for: {0}".format(
+        self.save_progress('In action handler for: {0}'.format(
             self.get_action_identifier()))
 
         action_result = self.add_action_result(ActionResult(dict(param)))
@@ -676,7 +579,7 @@ class VaronisDSPConnector(BaseConnector):
             if close_reason.lower() not in close_reasons:
                 raise ValueError(f'close reason must be one of {close_reasons}')
 
-            alert_ids = tools.try_convert(alert_id, lambda x: tools.argToList(x))
+            alert_ids = tools.try_convert(alert_id, lambda x: tools.multi_value_to_string_list(x))
             close_reason_id = VDSP_CLOSE_REASONS[close_reason.lower()]
 
             if len(alert_ids) == 0:
@@ -691,7 +594,7 @@ class VaronisDSPConnector(BaseConnector):
             ret_val, response = self._update_alert_status(action_result, query)
 
             if phantom.is_fail(ret_val):
-                self.error_print("Close alert failed.")
+                self.error_print('Close alert failed.')
                 return action_result.get_status()
 
             action_result.add_data(response)
@@ -701,12 +604,12 @@ class VaronisDSPConnector(BaseConnector):
         return action_result.set_status(phantom.APP_SUCCESS)
 
     def _handle_get_alerted_events(self, param):
-        self.save_progress("In action handler for: {0}".format(
+        self.save_progress('In action handler for: {0}'.format(
             self.get_action_identifier()))
 
         action_result = self.add_action_result(ActionResult(dict(param)))
         try:
-            alert_id = param['alert_id']
+            alert_ids = tools.multi_value_to_string_list(param['alert_id'])
             page = param.get('page', 1)
             count = param.get('max_results', VDSP_MAX_ALERTED_EVENTS)
             descending_order = param.get('descending_order', True)
@@ -719,15 +622,17 @@ class VaronisDSPConnector(BaseConnector):
                 page, lambda x: int(x),
                 ValueError(f'page should be integer, but it is {page}.'))
 
-            request_params = self._get_alerted_events_params(alert_id, page, count, descending_order)
+            payload = self._get_alerted_events_payload(alert_ids, descending_order)
 
-            ret_val, results = self._make_rest_call(
+            ret_val, results = self._make_search_call(
                 action_result,
-                VDSP_GET_ALERTED_EVENTS_ENDPOINT,
-                params=request_params)
+                query=payload,
+                result_mapper=SearchEventObjectMapper(),
+                page=page,
+                count=count)
 
             if phantom.is_fail(ret_val):
-                self.error_print("Get alerted events failed.")
+                self.error_print('Get alerted events failed.')
                 return action_result.get_status()
 
             for res in results:
@@ -744,7 +649,7 @@ class VaronisDSPConnector(BaseConnector):
         action_result = self.add_action_result(ActionResult(dict(param)))
 
         config = self.get_config()
-        last_fetched_id = self._state.get(VDSP_LAST_FETCH_ID_KEY, 0)
+        last_fetched_time = self._state.get(VDSP_LAST_FETCH_TIME, None)
         ingest_period = config.get(VDSP_INGEST_PERIOD_KEY, VDSP_DEFAULT_INGEST_PERIOD)
         is_ingest_artifacts = config.get(VDSP_INGEST_ARTIFACTS_KEY, False)
 
@@ -762,21 +667,21 @@ class VaronisDSPConnector(BaseConnector):
                 max_alerts = VDSP_MAX_ALERTS if container_count > VDSP_MAX_ALERTS else container_count
                 container_count -= max_alerts
 
-                alert_params = self._get_alerts_params(
+                alert_payload = self._get_alerts_payload(
                     start_time=start_time,
-                    from_alert_id=last_fetched_id,
-                    count=max_alerts,
+                    from_ingest_time=last_fetched_time,
                     threat_models=threat_model,
                     alert_severities=severity,
                     alert_statuses=alert_status
                 )
 
-                self.debug_print('Params completed', alert_params)
-                self.save_progress(f'Start ingesting data from {last_fetched_id}')
-                ret_val, alert_results = self._make_rest_call(
+                self.debug_print('Params completed', alert_payload)
+                self.save_progress(f'Start ingesting data from {last_fetched_time}')
+                ret_val, alert_results = self._make_search_call(
                     action_result,
-                    VDSP_GET_ALERTS_ENDPOINT,
-                    params=alert_params
+                    query=alert_payload,
+                    count=max_alerts,
+                    result_mapper=SearchAlertObjectMapper()
                 )
 
                 if not alert_results:
@@ -793,20 +698,22 @@ class VaronisDSPConnector(BaseConnector):
                 for alert_res in alert_results:
                     action_result.add_data(alert_res)
 
-                    id = alert_res['AlertSeqId']
-                    if not last_fetched_id or id > last_fetched_id:
-                        last_fetched_id = id
+                    ingest_time = tools.try_convert(alert_res['IngestTime'],
+                                                    lambda x: datetime.fromisoformat(x))
+                    if not last_fetched_time or ingest_time > last_fetched_time:
+                        last_fetched_time = ingest_time + timedelta(seconds=1)
 
                     container = self._create_container(alert_res)
 
                     if is_ingest_artifacts:
                         alert_id = alert_res['ID']
-                        request_params = self._get_alerted_events_params(alert_id, 1, artifact_count)
+                        event_payload = self._get_alerted_events_payload(alert_id)
 
-                        ret_val, event_results = self._make_rest_call(
+                        ret_val, event_results = self._make_search_call(
                             action_result,
-                            VDSP_GET_ALERTED_EVENTS_ENDPOINT,
-                            params=request_params
+                            query=event_payload,
+                            count=artifact_count,
+                            result_mapper=SearchEventObjectMapper()
                         )
 
                         if phantom.is_fail(ret_val):
@@ -831,7 +738,7 @@ class VaronisDSPConnector(BaseConnector):
                     self.save_progress(f'On poll Failed while saving containers. Message: {message}')
                     return action_result.get_status()
 
-            self._state[VDSP_LAST_FETCH_ID_KEY] = last_fetched_id
+            self._state[VDSP_LAST_FETCH_TIME] = last_fetched_time
             action_result.update_summary({'alerts_count': len(alert_results)})
 
         except Exception as e:
@@ -844,7 +751,7 @@ class VaronisDSPConnector(BaseConnector):
 
         action_id = self.get_action_identifier()
 
-        self.debug_print("action_id", self.get_action_identifier())
+        self.debug_print('action_id', self.get_action_identifier())
 
         if action_id == 'test_connectivity':
             ret_val = self._handle_test_connectivity(param)
@@ -870,7 +777,7 @@ class VaronisDSPConnector(BaseConnector):
         self._state = self.load_state()
 
         config = self.get_config()
-        """
+        '''
         # Access values in asset config by the name
 
         # Required values can be accessed directly
@@ -878,26 +785,47 @@ class VaronisDSPConnector(BaseConnector):
 
         # Optional values should use the .get() function
         optional_config_name = config.get('optional_config_name')
-        """
+        '''
 
         self._base_url = config.get(VDSP_JSON_BASE_URL_KEY)
         self._verify = config.get('verify_server_cert', False)
         self._session = requests.Session()
 
-        password = config[phantom.APP_JSON_PASSWORD]
-        username = config[phantom.APP_JSON_USERNAME]
-        username = username.replace('/', '\\')
+        try:
+            method_whitelist = 'allowed_methods' if hasattr(Retry.DEFAULT, 'allowed_methods') else 'method_whitelist'
+            whitelist_kawargs = {
+                method_whitelist: frozenset(['GET', 'POST', 'PUT'])
+            }
+            retry = Retry(
+                total=VDSP_REQUEST_RETRIES,
+                read=VDSP_REQUEST_RETRIES,
+                connect=VDSP_REQUEST_RETRIES,
+                status=VDSP_REQUEST_RETRIES,
+                status_forcelist=VDSP_HTTP_STATUS_WHITE_LIST,
+                raise_on_status=False,
+                raise_on_redirect=False,
+                **whitelist_kawargs  # type: ignore[arg-type]
+            )
+            http_adapter = HTTPAdapter(max_retries=retry)
+
+            self._session.mount('https://', http_adapter)
+
+        except NameError:
+            pass
+
+        api_key = config.get(VDSP_SCRT)
+
         try:
             state = self._state.get(VDSP_EXPIRES_IN_KEY, -1)
             if state < int(time.time()):
-                self._authorize(username, password, '/auth/configuration')
+                self._authorize(api_key)
 
             self._headers = {
                 'Authorization':
                 f'{self._state[VDSP_TOKEN_TYPE_KEY]} {self._state[VDSP_ACCESS_TOKEN_KEY]}'
             }
         except Exception as e:
-            self.error_print("Authorization", e)
+            self.error_print('Authorization', e)
             return phantom.APP_ERROR
 
         return phantom.APP_SUCCESS
@@ -933,10 +861,10 @@ def main():
 
     if username and password:
         try:
-            login_url = VaronisDSPConnector._get_phantom_base_url() + '/login'
+            login_url = VaronisDspSaasConnector._get_phantom_base_url() + '/login'
 
             print('Accessing the Login page')
-            r = requests.get(login_url, verify=verify, timeout=DEFAULT_TIMEOUT)
+            r = requests.get(login_url, verify=verify, timeout=VDSP_DEFAULT_TIMEOUT)
             csrftoken = r.cookies['csrftoken']
 
             data = dict()
@@ -953,7 +881,7 @@ def main():
                                verify=verify,
                                data=data,
                                headers=headers,
-                               timeout=DEFAULT_TIMEOUT)
+                               timeout=VDSP_DEFAULT_TIMEOUT)
             session_id = r2.cookies['sessionid']
         except Exception as e:
             print(
@@ -965,7 +893,7 @@ def main():
         in_json = json.loads(in_json)
         print(json.dumps(in_json, indent=4))
 
-        connector = VaronisDSPConnector()
+        connector = VaronisDspSaasConnector()
         connector.print_progress_message = True
 
         if session_id is not None:

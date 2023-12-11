@@ -3,13 +3,13 @@ from unittest.mock import MagicMock
 
 from phantom.action_result import ActionResult
 
-from varonisdsp_connector import VaronisDSPConnector
+from varonisdsp_connector import VDSP_ALERT_STATUSES, VDSP_CLOSE_REASONS, VaronisDspSaasConnector
 from varonisdsp_consts import *
 
 
 class VaronisDSPTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.connector = VaronisDSPConnector()
+        self.connector = VaronisDspSaasConnector()
         self.connector._base_url = 'https://test.com'
 
     def test_handle_get_alerts_empty_param(self):
@@ -27,7 +27,7 @@ class VaronisDSPTest(unittest.TestCase):
         self.connector._handle_get_alerts(param)
 
         self.connector._make_rest_call.assert_called_once_with(
-            action_result, VDSP_GET_ALERTS_ENDPOINT, params=request_params
+            action_result, VDSP_SEARCH_ENDPOINT, params=request_params
         )
 
     def test_handle_get_alerts(self):
@@ -81,7 +81,7 @@ class VaronisDSPTest(unittest.TestCase):
             ['administrator@varonis1.com', 'admin@varonis2.com']
         )
         self.connector._make_rest_call.assert_called_once_with(
-            action_result, VDSP_GET_ALERTS_ENDPOINT, params=request_params
+            action_result, VDSP_SEARCH_ENDPOINT, params=request_params
         )
 
     def test_handle_get_alerted_events(self):
