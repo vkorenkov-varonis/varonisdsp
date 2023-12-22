@@ -1,5 +1,5 @@
 [comment]: # "Auto-generated SOAR connector documentation"
-# Varonis DSP
+# Varonis SaaS
 
 Publisher: Varonis  
 Connector Version: 1\.0\.1  
@@ -8,17 +8,17 @@ Product Name: Data Security Platform
 Product Version Supported (regex): "\.\*"  
 Minimum Product Version: 5\.4\.0  
 
-Varonis DSP for Splunk SOAR
+Varonis SaaS for Splunk SOAR
 
 [comment]: # " File: README.md"
 [comment]: # ""
 [comment]: # "    Copyright (c) Varonis, 2023"
 [comment]: # ""
-[comment]: # "This unpublished material is proprietary to Varonis DSP. All"
+[comment]: # "This unpublished material is proprietary to Varonis SaaS. All"
 [comment]: # "rights reserved. The methods and techniques described herein are"
 [comment]: # "considered trade secrets and/or confidential. Reproduction or"
 [comment]: # "distribution, in whole or in part, is forbidden except by express"
-[comment]: # "written permission of Varonis DSP."
+[comment]: # "written permission of Varonis SaaS."
 [comment]: # ""
 [comment]: # "Licensed under the Apache License, Version 2.0 (the 'License');"
 [comment]: # "you may not use this file except in compliance with the License."

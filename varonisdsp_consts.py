@@ -2,11 +2,11 @@
 #
 # Copyright (c) Varonis, 2023
 #
-# This unpublished material is proprietary to Varonis DSP. All
+# This unpublished material is proprietary to Varonis SaaS. All
 # rights reserved. The methods and techniques described herein are
 # considered trade secrets and/or confidential. Reproduction or
 # distribution, in whole or in part, is forbidden except by express
-# written permission of Varonis DSP.
+# written permission of Varonis SaaS.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,13 +35,13 @@ VDSP_DISPLAY_NAME_KEY = 'DisplayName'
 VDSP_SAM_ACCOUNT_NAME_KEY = 'SAMAccountName'
 VDSP_EMAIL_KEY = 'Email'
 VDSP_AUTH_ENDPOINT = '/api/authentication/api_keys/token'
-VDSP_TEST_CONNECTION_ENDPOINT = '/api/entitymodel/Enum/5823'
+VDSP_TEST_CONNECTION_ENDPOINT = '/auth/configuration'
 VDSP_SEARCH_ENDPOINT = '/app/dataquery/api/search/v2/search'
 VDSP_SEARCH_RESULT_ENDPOINT = '/app/dataquery/api/search'
 VDSP_UPDATE_ALET_STATUS_ENDPOINT = '/api/alert/alert/SetStatusToAlerts'
 VDSP_INGEST_PERIOD_KEY = 'ingest_period'
-VDSP_INGEST_ARTIFACTS_KEY = 'ingest_artifacts'
-VDSP_LAST_FETCH_TIME = 'last_fetch_id'
+VDSP_INGEST_ARTIFACTS_FLAG = 'ingest_artifacts'
+VDSP_LAST_FETCH_TIME = 'last_fetch_time'
 VDSP_DEFAULT_INGEST_PERIOD = '2 week'
 VDSP_DEFAULT_TIMEOUT = 30
 VDSP_MAX_DAYS_BACK = 180

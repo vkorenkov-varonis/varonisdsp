@@ -179,6 +179,14 @@ class SearchRequest:
         result = object_to_dict(self)
         return result
 
+    def __eq__(self, __value: object) -> bool:
+        if isinstance(__value, dict):
+            return self.to_dict() == __value
+        elif isinstance(self, type(__value)):
+            return self.to_dict() == __value.to_dict()
+        else:
+            return False
+
 
 class AlertAttributes:
     Id = 'Alert.ID'
@@ -300,22 +308,22 @@ class AlertItem:
         self.State: Optional[List[str]] = None
         self.Status: str = None
         self.StatusId: int = None
-        self.CloseReason: str = None
+        self.CloseReason: Optional[str] = None
         self.BlacklistLocation: Optional[bool] = None
-        self.AbnormalLocation: Optional[List[str]] = None
+        self.AbnormalLocation: Optional[str] = None
         self.NumOfAlertedEvents: int = None
-        self.UserName: Optional[List[str]] = None
-        self.SamAccountName: Optional[List[str]] = None
-        self.PrivilegedAccountType: Optional[List[str]] = None
+        self.UserName: Optional[str] = None
+        self.SamAccountName: Optional[str] = None
+        self.PrivilegedAccountType: Optional[str] = None
         self.ContainMaliciousExternalIP: Optional[bool] = None
-        self.IPThreatTypes: Optional[List[str]] = None
-        self.Asset: Optional[List[str]] = None
-        self.AssetContainsFlaggedData: Optional[List[Optional[bool]]] = None
-        self.AssetContainsSensitiveData: Optional[List[Optional[bool]]] = None
-        self.Platform: Optional[List[str]] = None
-        self.FileServerOrDomain: Optional[List[str]] = None
+        self.IPThreatTypes: Optional[str] = None
+        self.Asset: Optional[str] = None
+        self.AssetContainsFlaggedData: Optional[bool] = None
+        self.AssetContainsSensitiveData: Optional[bool] = None
+        self.Platform: str = None
+        self.FileServerOrDomain: str = None
         self.EventUTC: Optional[datetime] = None
-        self.DeviceName: Optional[List[str]] = None
+        self.DeviceName: str = None
         self.IngestTime: datetime = None
 
         self.Url: str = None
@@ -331,8 +339,8 @@ class AlertItem:
 
 class EventItem:
     def __init__(self):
-        self.Id: Optional[str] = None
-        self.AlertId: Optional[List[str]] = None
+        self.ID: Optional[str] = None
+        self.AlertId: Optional[str] = None
         self.Type: Optional[str] = None
         self.TimeUTC: Optional[datetime] = None
         self.Status: Optional[str] = None
@@ -356,7 +364,7 @@ class EventItem:
         self.IsLockoutAccount: Optional[bool] = None
         self.IsStaleAccount: Optional[bool] = None
         self.IsMaliciousIP: Optional[bool] = None
-        self.ExternalIPThreatTypes: Optional[List[str]] = None
+        self.ExternalIPThreatTypes: Optional[str] = None
         self.ExternalIPReputation: Optional[str] = None
         self.OnObjectName: Optional[str] = None
         self.OnObjectType: Optional[str] = None
@@ -395,8 +403,9 @@ class ThreatModelItem:
 ''' MAPPERS '''
 
 
-class SearchMapper:
-    def map(self, json_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+class SearchAlertObjectMapper:
+
+    def map(self, json_data: Dict[str, Any]) -> List[AlertItem]:
         key_valued_objects = convert_json_to_key_value(json_data)
 
         mapped_items = []
@@ -405,39 +414,33 @@ class SearchMapper:
 
         return mapped_items
 
-    def map_item(self, _: Dict[str, Any]) -> Dict[str, Any]:
-        pass
-
-
-class SearchAlertObjectMapper(SearchMapper):
-
-    def map_item(self, row: Dict[str, Any]) -> Dict[str, Any]:
+    def map_item(self, row: Dict[str, Any]) -> AlertItem:
         alert_item = AlertItem()
         alert_item.ID = row[AlertAttributes.Id]
         alert_item.Name = row[AlertAttributes.RuleName]
         alert_item.Time = row[AlertAttributes.Time]
         alert_item.Severity = row[AlertAttributes.RuleSeverityName]
-        alert_item.SeverityId = int(row[AlertAttributes.RuleSeverityId])
+        alert_item.SeverityId = try_convert(row[AlertAttributes.RuleSeverityId], lambda x: int(x))
         alert_item.Category = row[AlertAttributes.RuleCategoryName]
-        alert_item.Country = multi_value_to_string_list(row[AlertAttributes.LocationCountryName])
-        alert_item.State = multi_value_to_string_list(row[AlertAttributes.LocationSubdivisionName])
+        alert_item.Country = row[AlertAttributes.LocationCountryName]
+        alert_item.State = row[AlertAttributes.LocationSubdivisionName]
         alert_item.Status = row[AlertAttributes.StatusName]
-        alert_item.StatusId = int(row[AlertAttributes.StatusId])
+        alert_item.StatusId = try_convert(row[AlertAttributes.StatusId], lambda x: int(x))
         alert_item.CloseReason = row[AlertAttributes.CloseReasonName]
-        alert_item.BlacklistLocation = parse_bool(row.get(AlertAttributes.LocationBlacklistedLocation))
-        alert_item.AbnormalLocation = multi_value_to_string_list(row[AlertAttributes.LocationAbnormalLocation])
-        alert_item.NumOfAlertedEvents = int(row[AlertAttributes.EventsCount])
-        alert_item.UserName = multi_value_to_string_list(row[AlertAttributes.UserName])
-        alert_item.SamAccountName = multi_value_to_string_list(row[AlertAttributes.UserSamAccountName])
-        alert_item.PrivilegedAccountType = multi_value_to_string_list(row[AlertAttributes.UserAccountTypeName])
-        alert_item.ContainMaliciousExternalIP = parse_bool(row.get(AlertAttributes.DeviceIsMaliciousExternalIp))
-        alert_item.IPThreatTypes = multi_value_to_string_list(row[AlertAttributes.DeviceExternalIpThreatTypesName])
-        alert_item.Asset = multi_value_to_string_list(row[AlertAttributes.AssetPath])
-        alert_item.AssetContainsFlaggedData = multi_value_to_boolean_list(row[AlertAttributes.DataIsFlagged])
-        alert_item.AssetContainsSensitiveData = multi_value_to_boolean_list(row[AlertAttributes.DataIsSensitive])
-        alert_item.Platform = multi_value_to_string_list(row[AlertAttributes.FilerPlatformName])
-        alert_item.FileServerOrDomain = multi_value_to_string_list(row[AlertAttributes.FilerName])
-        alert_item.DeviceName = multi_value_to_string_list(row[AlertAttributes.DeviceHostname])
+        alert_item.BlacklistLocation = row.get(AlertAttributes.LocationBlacklistedLocation)
+        alert_item.AbnormalLocation = row[AlertAttributes.LocationAbnormalLocation]
+        alert_item.NumOfAlertedEvents = try_convert(row[AlertAttributes.EventsCount], lambda x: int(x))
+        alert_item.UserName = row[AlertAttributes.UserName]
+        alert_item.SamAccountName = row[AlertAttributes.UserSamAccountName]
+        alert_item.PrivilegedAccountType = row[AlertAttributes.UserAccountTypeName]
+        alert_item.ContainMaliciousExternalIP = try_convert(row.get(AlertAttributes.DeviceIsMaliciousExternalIp), lambda x: parse_bool(x))
+        alert_item.IPThreatTypes = row[AlertAttributes.DeviceExternalIpThreatTypesName]
+        alert_item.Asset = row[AlertAttributes.AssetPath]
+        alert_item.AssetContainsFlaggedData = try_convert(row[AlertAttributes.DataIsFlagged], lambda x: parse_bool(x))
+        alert_item.AssetContainsSensitiveData = try_convert(row[AlertAttributes.DataIsSensitive], lambda x: parse_bool(x))
+        alert_item.Platform = row[AlertAttributes.FilerPlatformName]
+        alert_item.FileServerOrDomain = row[AlertAttributes.FilerName]
+        alert_item.DeviceName = row[AlertAttributes.DeviceHostname]
         alert_item.IngestTime = try_convert(row.get(AlertAttributes.IngestTime),
                                             lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S')
                                                 .replace(tzinfo=timezone.utc))
@@ -445,16 +448,25 @@ class SearchAlertObjectMapper(SearchMapper):
                                           lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S')
                                             .replace(tzinfo=timezone.utc))
 
-        return alert_item.to_dict()
+        return alert_item
 
 
-class SearchEventObjectMapper(SearchMapper):
+class SearchEventObjectMapper:
 
-    def map_item(self, row: Dict[str, Any]) -> Dict[str, Any]:
+    def map(self, json_data: Dict[str, Any]) -> List[EventItem]:
+        key_valued_objects = convert_json_to_key_value(json_data)
+
+        mapped_items = []
+        for obj in key_valued_objects:
+            mapped_items.append(self.map_item(obj))
+
+        return mapped_items
+
+    def map_item(self, row: Dict[str, Any]) -> EventItem:
         event_item = EventItem()
 
-        event_item.AlertId = multi_value_to_string_list(row.get(EventAttributes.EventAlertId))
-        event_item.Id = row.get(EventAttributes.EventGuid, '')
+        event_item.AlertId = row.get(EventAttributes.EventAlertId)
+        event_item.ID = row.get(EventAttributes.EventGuid, '')
         event_item.Type = row.get(EventAttributes.EventTypeName)
         event_item.TimeUTC = try_convert(row.get(EventAttributes.EventTimeUtc),
                                          lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%f%z')
@@ -463,7 +475,7 @@ class SearchEventObjectMapper(SearchMapper):
         event_item.Description = row.get(EventAttributes.EventDescription)
         event_item.Country = row.get(EventAttributes.EventLocationCountryName)
         event_item.State = row.get(EventAttributes.EventLocationSubdivisionName)
-        event_item.BlacklistedLocation = parse_bool(row.get(EventAttributes.EventLocationBlacklistedLocation))
+        event_item.BlacklistedLocation = try_convert(row.get(EventAttributes.EventLocationBlacklistedLocation), lambda x: parse_bool(x))
         event_item.EventOperation = row.get(EventAttributes.EventOperationName)
         event_item.ByUserAccount = row.get(EventAttributes.EventByAccountIdentityName)
         event_item.ByUserAccountType = row.get(EventAttributes.EventByAccountTypeName)
@@ -476,22 +488,21 @@ class SearchEventObjectMapper(SearchMapper):
         event_item.DestinationIP = row.get(EventAttributes.EventDestinationIp)
         event_item.SourceDevice = row.get(EventAttributes.EventDeviceName)
         event_item.DestinationDevice = row.get(EventAttributes.EventDestinationDeviceName)
-        event_item.IsDisabledAccount = parse_bool(row.get(EventAttributes.EventByAccountIsDisabled))
-        event_item.IsLockoutAccount = parse_bool(row.get(EventAttributes.EventByAccountIsLockout))
-        event_item.IsStaleAccount = parse_bool(row.get(EventAttributes.EventByAccountIsStale))
-        event_item.IsMaliciousIP = parse_bool(row.get(EventAttributes.EventDeviceExternalIpIsMalicious))
-        event_item.ExternalIPThreatTypes = multi_value_to_string_list(
-            row.get(EventAttributes.EventDeviceExternalIpThreatTypesName, ''))
+        event_item.IsDisabledAccount = try_convert(row.get(EventAttributes.EventByAccountIsDisabled), lambda x: parse_bool(x))
+        event_item.IsLockoutAccount = try_convert(row.get(EventAttributes.EventByAccountIsLockout), lambda x: parse_bool(x))
+        event_item.IsStaleAccount = try_convert(row.get(EventAttributes.EventByAccountIsStale), lambda x: parse_bool(x))
+        event_item.IsMaliciousIP = try_convert(row.get(EventAttributes.EventDeviceExternalIpIsMalicious), lambda x: parse_bool(x))
+        event_item.ExternalIPThreatTypes = row.get(EventAttributes.EventDeviceExternalIpThreatTypesName, '')
         event_item.ExternalIPReputation = row.get(EventAttributes.EventDeviceExternalIpReputationName)
         event_item.OnObjectName = row.get(EventAttributes.EventOnObjectName)
         event_item.OnObjectType = row.get(EventAttributes.EventOnResourceObjectTypeName)
         event_item.OnSamAccountName = row.get(EventAttributes.EventOnAccountSamAccountName)
-        event_item.IsSensitive = parse_bool(row.get(EventAttributes.EventOnResourceIsSensitive))
-        event_item.OnAccountIsDisabled = parse_bool(row.get(EventAttributes.EventOnAccountIsDisabled))
-        event_item.OnAccountIsLockout = parse_bool(row.get(EventAttributes.EventOnAccountIsLockout))
+        event_item.IsSensitive = try_convert(row.get(EventAttributes.EventOnResourceIsSensitive), lambda x: parse_bool(x))
+        event_item.OnAccountIsDisabled = try_convert(row.get(EventAttributes.EventOnAccountIsDisabled), lambda x: parse_bool(x))
+        event_item.OnAccountIsLockout = try_convert(row.get(EventAttributes.EventOnAccountIsLockout), lambda x: parse_bool(x))
         event_item.Path = row.get(EventAttributes.EventOnResourcePath)
 
-        return event_item.to_dict()
+        return event_item
 
 
 class ThreatModelObjectMapper:
@@ -731,7 +742,7 @@ def create_alert_request(threat_models: Optional[List[str]] = None,
 def create_alerted_events_request(alert_ids: List[str], descending_order=True) -> SearchRequest:
     event_query = EventSearchQueryBuilder()\
         .with_alert_ids(alert_ids)\
-        .with_last_days(20)\
+        .with_last_days(365)\
         .build()
 
     request = SearchRequestBuilder(event_query, EventAttributes.Columns)\

@@ -2,11 +2,11 @@
 #
 # Copyright (c) Varonis, 2023
 #
-# This unpublished material is proprietary to Varonis DSP. All
+# This unpublished material is proprietary to Varonis SaaS. All
 # rights reserved. The methods and techniques described herein are
 # considered trade secrets and/or confidential. Reproduction or
 # distribution, in whole or in part, is forbidden except by express
-# written permission of Varonis DSP.
+# written permission of Varonis SaaS.
 #
 # Licensed under the Apache License, Version 2.0 (the 'License');
 # you may not use this file except in compliance with the License.
@@ -40,22 +40,11 @@ from urllib3 import Retry
 
 import varonisdsp_tools as tools
 from varonisdsp_consts import *
-from varonisdsp_search import (SearchAlertObjectMapper, SearchEventObjectMapper, SearchMapper, SearchRequest, create_alert_request,
-                               create_alerted_events_request, get_query_range)
+from varonisdsp_search import (ALERT_SEVERITIES, ALERT_STATUSES, CLOSE_REASONS, AlertItem, EventItem, SearchAlertObjectMapper,
+                               SearchEventObjectMapper, SearchRequest, create_alert_request, create_alerted_events_request, get_query_range)
 
-VDSP_ALERT_STATUSES = {'open': 1, 'under investigation': 2, 'closed': 3}
-VDSP_ALERT_SEVERITIES = ['high', 'medium', 'low']
-VDSP_REQUEST_RETRIES = 30
-VDSP_HTTP_STATUS_WHITE_LIST = [ 304, 206 ]
-VDSP_CLOSE_REASONS = {
-    'none': 0,
-    'resolved': 1,
-    'misconfiguration': 2,
-    'threat model disabled or deleted': 3,
-    'account misclassification': 4,
-    'legitimate activity': 5,
-    'other': 6
-}
+REQUEST_RETRIES = 30
+HTTP_STATUS_WHITE_LIST = [ 304, 206 ]
 
 
 class RetVal(tuple):
@@ -224,10 +213,8 @@ class VaronisDspSaasConnector(BaseConnector):
     def _make_search_call(self,
                           action_result,
                           query: SearchRequest,
-                          result_mapper: SearchMapper,
                           count: int,
-                          page: int = 1,) -> RetVal:
-        self.debug_print('Search query payload: ', query.to_dict())
+                          page: int = 1) -> RetVal:
 
         ret_val, results = self._make_rest_call(action_result=action_result,
                                                 url_suffix=VDSP_SEARCH_ENDPOINT,
@@ -249,7 +236,7 @@ class VaronisDspSaasConnector(BaseConnector):
             self.save_progress('Faild to get results of search query call.')
             return action_result.get_status()
 
-        return ret_val, result_mapper.map(results)
+        return ret_val, results
 
     def _authorize(self, api_key: str) -> Dict[str, Any]:
         action_result = self.add_action_result(ActionResult({}))
@@ -340,7 +327,7 @@ class VaronisDspSaasConnector(BaseConnector):
 
         return payload
 
-    def _get_alerted_events_payload(self, alert_ids: List[str], descending_order: bool) -> Dict[str, Any]:
+    def _get_alerted_events_payload(self, alert_ids: List[str], descending_order: bool = True) -> SearchRequest:
         '''Get alerted events parameters
 
         :type alert_ids: ``List[str]``
@@ -367,45 +354,44 @@ class VaronisDspSaasConnector(BaseConnector):
                                     method='POST',
                                     json=query)
 
-    def _create_container(self, data: Dict[str, Any]):
+    def _create_container(self, data: AlertItem):
         container = dict()
-        container['name'] = data['Name']
-        container['source_data_identifier'] = data['ID']
-        container['status'] = data['Status']
-        container['severity'] = data['Severity']
-        container['start_time'] = f"{data['EventUTC']}Z"
+        container['name'] = data.Name
+        container['source_data_identifier'] = data.ID
+        container['status'] = data.Status
+        container['severity'] = data.Severity
+        container['start_time'] = data.EventUTC.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
         container['custom_fields'] = {
-            'category': data.get('Category', None),
-            'department': data.get('By', {}).get('Department', None),
-            'sam_account_name': data.get('By', {}).get('SamAccountName', None),
-            'privileged_account_type': data.get('By', {}).get('PrivilegedAccountType', None),
-            'asset': data.get('On', {}).get('Asset', None),
-            'platform': data.get('On', {}).get('Platform', None),
-            'file_server_or_domain': data.get('On', {}).get('FileServerOrDomain', None),
-            'contains_flagged_data': data.get('On', {}).get('ContainsFlaggedData', None),
-            'contains_sensitive_data': data.get('On', {}).get('ContainsSensitiveData', None),
-            'country': data.get('Country', None),
-            'state': data.get('State', None),
-            'device_name': data.get('Device', {}).get('Name', None),
-            'ip_threat_types': data.get('Device', {}).get('IPThreatTypes', None),
-            'contain_malicious_external_ip': data.get('Device', {}).get('ContainMaliciousExternalIP', None),
-            'blacklist_location': data.get('BlacklistLocation', None),
-            'close_reason': data.get('CloseReason', None),
-            'user_name': data.get('UserName', None),
-            'abnormal_location': data.get('AbnormalLocation', None),
+            'category': data.Category,
+            'sam_account_name': data.SamAccountName,
+            'privileged_account_type': data.PrivilegedAccountType,
+            'asset': data.Asset,
+            'platform': data.Platform,
+            'file_server_or_domain': data.FileServerOrDomain,
+            'contains_flagged_data': data.AssetContainsFlaggedData,
+            'contains_sensitive_data': data.AssetContainsSensitiveData,
+            'country': data.Country,
+            'state': data.State,
+            'device_name': data.DeviceName,
+            'ip_threat_types': data.IPThreatTypes,
+            'contain_malicious_external_ip': data.ContainMaliciousExternalIP,
+            'blacklist_location': data.BlacklistLocation,
+            'close_reason': data.CloseReason,
+            'user_name': data.UserName,
+            'abnormal_location': data.AbnormalLocation,
         }
-        container['data'] = data
+        container['data'] = data.to_dict()
         return container
 
-    def _create_artifact(self, data: Dict[str, Any]):
+    def _create_artifact(self, data: EventItem):
         artifact = dict()
-        utc_time = data['UTCTime']
-        artifact['name'] = data['Description']
+        utc_time = data.TimeUTC.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+        artifact['name'] = data.Description
         artifact['label'] = 'event'
-        artifact['source_data_identifier'] = data['ID']
+        artifact['source_data_identifier'] = data.ID
         artifact['start_time'] = utc_time
-        artifact['type'] = data['Type']
-        artifact['data'] = data
+        artifact['type'] = data.Type
+        artifact['data'] = data.to_dict()
         return artifact
 
     # HANDLERS
@@ -488,13 +474,13 @@ class VaronisDspSaasConnector(BaseConnector):
 
             if alert_severities:
                 for severity in alert_severities:
-                    if severity.lower() not in VDSP_ALERT_SEVERITIES:
-                        raise ValueError(f'There is no severity {severity}. Posible severities: {VDSP_ALERT_SEVERITIES}')
+                    if severity.lower() not in ALERT_SEVERITIES:
+                        raise ValueError(f'There is no severity {severity}. Posible severities: {ALERT_SEVERITIES}')
 
             if alert_statuses:
                 for status in alert_statuses:
-                    if status.lower() not in VDSP_ALERT_STATUSES.keys():
-                        raise ValueError(f'There is no status {severity}.')
+                    if status.lower() not in ALERT_STATUSES.keys():
+                        raise ValueError(f'There is no status {status}.')
 
             payload = self._get_alerts_payload(
                 threat_models=threat_model_names,
@@ -507,10 +493,11 @@ class VaronisDspSaasConnector(BaseConnector):
                 alert_severities=alert_severities,
                 descending_order=descending_order)
 
+            self.debug_print('Alert search request payload:', json.dumps(payload.to_dict()))
+
             ret_val, results = self._make_search_call(
                 action_result,
                 query=payload,
-                result_mapper=SearchAlertObjectMapper(),
                 page=page,
                 count=max_results)
 
@@ -520,11 +507,14 @@ class VaronisDspSaasConnector(BaseConnector):
                 self.error_print('Get alerts failed.')
                 return action_result.get_status()
 
+            results = SearchAlertObjectMapper().map(results)
+
             for res in results:
-                action_result.add_data(res)
+                action_result.add_data(res.to_dict())
 
             action_result.update_summary({'alerts_count': len(results)})
         except Exception as e:
+            self.error_print('Exception occurred while getting alerts.', e)
             return action_result.set_status(phantom.APP_ERROR, str(e))
 
         return action_result.set_status(phantom.APP_SUCCESS)
@@ -539,15 +529,15 @@ class VaronisDspSaasConnector(BaseConnector):
             alert_id = param['alert_id']
 
             statuses = list(
-                filter(lambda name: name != 'closed', VDSP_ALERT_STATUSES.keys()))
+                filter(lambda name: name != 'closed', ALERT_STATUSES.keys()))
             if status.lower() not in statuses:
                 raise ValueError(f'status must be one of {statuses}.')
 
-            status_id = VDSP_ALERT_STATUSES[status.lower()]
+            status_id = ALERT_STATUSES[status.lower()]
 
             query: Dict[str, Any] = {
                 'AlertGuids': tools.try_convert(alert_id, lambda x: tools.multi_value_to_string_list(x)),
-                'closeReasonId': VDSP_CLOSE_REASONS['none'],
+                'closeReasonId': CLOSE_REASONS['none'],
                 'statusId': status_id
             }
 
@@ -575,12 +565,12 @@ class VaronisDspSaasConnector(BaseConnector):
 
             close_reasons = list(
                 filter(lambda name: not tools.strEqual(name, 'none'),
-                    VDSP_CLOSE_REASONS.keys()))
+                    CLOSE_REASONS.keys()))
             if close_reason.lower() not in close_reasons:
                 raise ValueError(f'close reason must be one of {close_reasons}')
 
             alert_ids = tools.try_convert(alert_id, lambda x: tools.multi_value_to_string_list(x))
-            close_reason_id = VDSP_CLOSE_REASONS[close_reason.lower()]
+            close_reason_id = CLOSE_REASONS[close_reason.lower()]
 
             if len(alert_ids) == 0:
                 raise ValueError('alert id(s) not specified')
@@ -588,7 +578,7 @@ class VaronisDspSaasConnector(BaseConnector):
             query: Dict[str, Any] = {
                 'AlertGuids': alert_ids,
                 'closeReasonId': close_reason_id,
-                'statusId': VDSP_ALERT_STATUSES['closed']
+                'statusId': ALERT_STATUSES['closed']
             }
 
             ret_val, response = self._update_alert_status(action_result, query)
@@ -627,7 +617,6 @@ class VaronisDspSaasConnector(BaseConnector):
             ret_val, results = self._make_search_call(
                 action_result,
                 query=payload,
-                result_mapper=SearchEventObjectMapper(),
                 page=page,
                 count=count)
 
@@ -635,8 +624,10 @@ class VaronisDspSaasConnector(BaseConnector):
                 self.error_print('Get alerted events failed.')
                 return action_result.get_status()
 
+            results = SearchEventObjectMapper().map(results)
+
             for res in results:
-                action_result.add_data(res)
+                action_result.add_data(res.to_dict())
 
             action_result.update_summary({'events_count': len(results)})
         except Exception as ex:
@@ -650,16 +641,20 @@ class VaronisDspSaasConnector(BaseConnector):
 
         config = self.get_config()
         last_fetched_time = self._state.get(VDSP_LAST_FETCH_TIME, None)
+        last_fetched_time = tools.try_convert(last_fetched_time, lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%f%z'))
         ingest_period = config.get(VDSP_INGEST_PERIOD_KEY, VDSP_DEFAULT_INGEST_PERIOD)
-        is_ingest_artifacts = config.get(VDSP_INGEST_ARTIFACTS_KEY, False)
+        is_ingest_artifacts = config.get(VDSP_INGEST_ARTIFACTS_FLAG, True)
 
         try:
             container_count = param.get(phantom.APP_JSON_CONTAINER_COUNT, float('inf'))
             start_time = tools.arg_to_datetime(ingest_period)
             artifact_count = param.get(phantom.APP_JSON_ARTIFACT_COUNT, VDSP_MAX_ALERTED_EVENTS)
             alert_status = param.get('alert_status', None)
+            alert_status = tools.multi_value_to_string_list(alert_status)
             threat_model = param.get('threat_model', None)
+            threat_model = tools.multi_value_to_string_list(threat_model)
             severity = param.get('severity', None)
+            severity = tools.convert_level(severity, list(ALERT_SEVERITIES.keys()))
 
             self.save_progress(f'Start ingesting data for interval from {start_time}, amount {container_count}')
 
@@ -672,7 +667,8 @@ class VaronisDspSaasConnector(BaseConnector):
                     from_ingest_time=last_fetched_time,
                     threat_models=threat_model,
                     alert_severities=severity,
-                    alert_statuses=alert_status
+                    alert_statuses=alert_status,
+                    descending_order=False
                 )
 
                 self.debug_print('Params completed', alert_payload)
@@ -680,49 +676,51 @@ class VaronisDspSaasConnector(BaseConnector):
                 ret_val, alert_results = self._make_search_call(
                     action_result,
                     query=alert_payload,
-                    count=max_alerts,
-                    result_mapper=SearchAlertObjectMapper()
+                    count=max_alerts
                 )
-
-                if not alert_results:
-                    break
-
-                self.debug_print('Request completed', ret_val)
 
                 if phantom.is_fail(ret_val):
                     self.save_progress('On poll Failed.')
                     return action_result.get_status()
 
+                self.debug_print('Alert has results:', alert_results['hasResults'])
+
+                if not alert_results['hasResults']:
+                    break
+
+                self.debug_print('Request completed', ret_val)
+
                 containers = list()
+                alert_results = SearchAlertObjectMapper().map(alert_results)
+                dict_events = None
+
+                if is_ingest_artifacts:
+                    alert_ids = list(map(lambda x: x.ID, alert_results))
+                    event_payload = self._get_alerted_events_payload(alert_ids, descending_order=False)
+
+                    ret_val, event_results = self._make_search_call(
+                        action_result,
+                        query=event_payload,
+                        count=artifact_count * max_alerts
+                    )
+
+                    if phantom.is_fail(ret_val):
+                        self.save_progress('On poll Failed while getting alerted events.')
+                        return action_result.get_status()
+
+                    event_results = SearchEventObjectMapper().map(event_results)
+
+                    dict_events = tools.group_by(event_results, key_func=lambda x: x.AlertId)
 
                 for alert_res in alert_results:
-                    action_result.add_data(alert_res)
-
-                    ingest_time = tools.try_convert(alert_res['IngestTime'],
-                                                    lambda x: datetime.fromisoformat(x))
+                    ingest_time = alert_res.IngestTime
                     if not last_fetched_time or ingest_time > last_fetched_time:
                         last_fetched_time = ingest_time + timedelta(seconds=1)
 
                     container = self._create_container(alert_res)
 
-                    if is_ingest_artifacts:
-                        alert_id = alert_res['ID']
-                        event_payload = self._get_alerted_events_payload(alert_id)
-
-                        ret_val, event_results = self._make_search_call(
-                            action_result,
-                            query=event_payload,
-                            count=artifact_count,
-                            result_mapper=SearchEventObjectMapper()
-                        )
-
-                        if phantom.is_fail(ret_val):
-                            self.save_progress('On poll Failed while getting alerted events.')
-                            return action_result.get_status()
-
-                        action_result.add_data(event_results)
-
-                        artifacts = list(map(self._create_artifact, event_results))
+                    if dict_events:
+                        artifacts = list(map(self._create_artifact, dict_events[alert_res.ID]))
                         container['artifacts'] = artifacts
 
                     containers.append(container)
@@ -738,7 +736,7 @@ class VaronisDspSaasConnector(BaseConnector):
                     self.save_progress(f'On poll Failed while saving containers. Message: {message}')
                     return action_result.get_status()
 
-            self._state[VDSP_LAST_FETCH_TIME] = last_fetched_time
+            self._state[VDSP_LAST_FETCH_TIME] = last_fetched_time.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
             action_result.update_summary({'alerts_count': len(alert_results)})
 
         except Exception as e:
@@ -797,11 +795,11 @@ class VaronisDspSaasConnector(BaseConnector):
                 method_whitelist: frozenset(['GET', 'POST', 'PUT'])
             }
             retry = Retry(
-                total=VDSP_REQUEST_RETRIES,
-                read=VDSP_REQUEST_RETRIES,
-                connect=VDSP_REQUEST_RETRIES,
-                status=VDSP_REQUEST_RETRIES,
-                status_forcelist=VDSP_HTTP_STATUS_WHITE_LIST,
+                total=REQUEST_RETRIES,
+                read=REQUEST_RETRIES,
+                connect=REQUEST_RETRIES,
+                status=REQUEST_RETRIES,
+                status_forcelist=HTTP_STATUS_WHITE_LIST,
                 raise_on_status=False,
                 raise_on_redirect=False,
                 **whitelist_kawargs  # type: ignore[arg-type]

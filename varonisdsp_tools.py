@@ -1,5 +1,6 @@
 from collections import deque
 from datetime import datetime, timezone
+from itertools import groupby
 from typing import Any, Dict, List, Optional
 
 import dateparser
@@ -133,12 +134,6 @@ def parse_bool(value: str) -> Optional[bool]:
     return None
 
 
-def multi_value_to_boolean_list(multi_value: str) -> Optional[List[Optional[bool]]]:
-    if not multi_value or multi_value.isspace():
-        return None
-    return [parse_bool(value) for value in multi_value.split(',')]
-
-
 def convert_json_to_key_value(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     result = []
     for row in data["rows"]:
@@ -194,4 +189,24 @@ def object_to_dict(obj):
                     constructed_obj[key] = new_obj
                     queue.append((id(val), val, new_obj))
 
+    return result
+
+
+def convert_level(level: str, levels: List[str]) -> List[str]:
+    if level is None:
+        return []
+    result = levels.copy()
+    for lev in levels:
+        if level == lev:
+            break
+        result.remove(lev)
+    return result
+
+
+def group_by(data: List[Any], key_func: Any) -> Dict[str, List[Any]]:
+    data = sorted(data, key=key_func)
+    grouping = groupby(data, key=key_func)
+    result = {}
+    for k, g in grouping:
+        result[k] = list(g)
     return result
