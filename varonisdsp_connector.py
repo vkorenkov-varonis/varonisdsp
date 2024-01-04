@@ -644,17 +644,17 @@ class VaronisDspSaasConnector(BaseConnector):
         last_fetched_time = tools.try_convert(last_fetched_time, lambda x: datetime.strptime(x, '%Y-%m-%dT%H:%M:%S.%f%z'))
         ingest_period = config.get(VDSP_INGEST_PERIOD_KEY, VDSP_DEFAULT_INGEST_PERIOD)
         is_ingest_artifacts = config.get(VDSP_INGEST_ARTIFACTS_FLAG, True)
+        alert_status = config.get(VDSP_ALERT_STATUS_KEY, None)
+        alert_status = tools.multi_value_to_string_list(alert_status)
+        threat_model = config.get(VDSP_THREAT_MODEL_KEY, None)
+        threat_model = tools.multi_value_to_string_list(threat_model)
+        severity = config.get(VDSP_ALERT_SEVERITY_KEY, None)
+        severity = tools.convert_level(severity, list(ALERT_SEVERITIES.keys()))
 
         try:
             container_count = param.get(phantom.APP_JSON_CONTAINER_COUNT, float('inf'))
             start_time = tools.arg_to_datetime(ingest_period)
             artifact_count = param.get(phantom.APP_JSON_ARTIFACT_COUNT, VDSP_MAX_ALERTED_EVENTS)
-            alert_status = param.get('alert_status', None)
-            alert_status = tools.multi_value_to_string_list(alert_status)
-            threat_model = param.get('threat_model', None)
-            threat_model = tools.multi_value_to_string_list(threat_model)
-            severity = param.get('severity', None)
-            severity = tools.convert_level(severity, list(ALERT_SEVERITIES.keys()))
 
             self.save_progress(f'Start ingesting data for interval from {start_time}, amount {container_count}')
 
@@ -671,7 +671,7 @@ class VaronisDspSaasConnector(BaseConnector):
                     descending_order=False
                 )
 
-                self.debug_print('Params completed', alert_payload)
+                self.debug_print('Params completed', json.dumps(alert_payload.to_dict()))
                 self.save_progress(f'Start ingesting data from {last_fetched_time}')
                 ret_val, alert_results = self._make_search_call(
                     action_result,

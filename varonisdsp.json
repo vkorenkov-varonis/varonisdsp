@@ -64,9 +64,10 @@
             "description": "Varonis alert status",
             "data_type": "string",
             "value_list": [
-                "Open",
+                "New",
                 "Under investigation",
-                "Closed"
+                "Closed",
+                "Auto-Resolved"
             ],
             "order": 7
         }

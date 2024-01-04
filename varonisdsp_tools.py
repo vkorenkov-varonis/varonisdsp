@@ -173,7 +173,7 @@ def object_to_dict(obj):
                 if isliteral(val):
                     constructed_obj.append(val)
                 elif isinstance(val, datetime):
-                    constructed_obj.append(val.strftime('%Y-%m-%dT%H:%M:%S'))
+                    constructed_obj.append(val.strftime('%Y-%m-%dT%H:%M:%S.%f%z'))
                 else:
                     new_obj = new_construct(val)
                     queue.append((id(val), val, new_obj))
@@ -183,7 +183,7 @@ def object_to_dict(obj):
                 if isliteral(val):
                     constructed_obj[key] = val
                 elif isinstance(val, datetime):
-                    constructed_obj[key] = val.strftime('%Y-%m-%dT%H:%M:%S')
+                    constructed_obj[key] = val.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
                 else:
                     new_obj = new_construct(val)
                     constructed_obj[key] = new_obj
