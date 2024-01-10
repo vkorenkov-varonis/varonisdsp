@@ -433,11 +433,11 @@ class SearchAlertObjectMapper:
         alert_item.UserName = row[AlertAttributes.UserName]
         alert_item.SamAccountName = row[AlertAttributes.UserSamAccountName]
         alert_item.PrivilegedAccountType = row[AlertAttributes.UserAccountTypeName]
-        alert_item.ContainMaliciousExternalIP = try_convert(row.get(AlertAttributes.DeviceIsMaliciousExternalIp), lambda x: parse_bool(x))
+        alert_item.ContainMaliciousExternalIP = try_convert(row.get(AlertAttributes.DeviceIsMaliciousExternalIp), lambda x: parse_bool_list(x))
         alert_item.IPThreatTypes = row[AlertAttributes.DeviceExternalIpThreatTypesName]
         alert_item.Asset = row[AlertAttributes.AssetPath]
-        alert_item.AssetContainsFlaggedData = try_convert(row[AlertAttributes.DataIsFlagged], lambda x: parse_bool(x))
-        alert_item.AssetContainsSensitiveData = try_convert(row[AlertAttributes.DataIsSensitive], lambda x: parse_bool(x))
+        alert_item.AssetContainsFlaggedData = try_convert(row[AlertAttributes.DataIsFlagged], lambda x: parse_bool_list(x))
+        alert_item.AssetContainsSensitiveData = try_convert(row[AlertAttributes.DataIsSensitive], lambda x: parse_bool_list(x))
         alert_item.Platform = row[AlertAttributes.FilerPlatformName]
         alert_item.FileServerOrDomain = row[AlertAttributes.FilerName]
         alert_item.DeviceName = row[AlertAttributes.DeviceHostname]

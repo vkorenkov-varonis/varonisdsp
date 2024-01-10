@@ -255,7 +255,7 @@
                 },
                 {
                     "data_path": "action_result.data.*.ContainMaliciousExternalIP",
-                    "data_type": "boolean",
+                    "data_type": "string",
                     "column_name": "Contain Malicious External IP",
                     "column_order": 18
                 },
@@ -309,13 +309,13 @@
                 },
                 {
                     "data_path": "action_result.data.*.AssetContainsFlaggedData",
-                    "data_type": "boolean",
+                    "data_type": "string",
                     "column_name": "Contains Flagged Data",
                     "column_order": 20
                 },
                 {
                     "data_path": "action_result.data.*.AssetContainsSensitiveData",
-                    "data_type": "boolean",
+                    "data_type": "string",
                     "column_name": "Contains Sensitive Data",
                     "column_order": 21
                 },

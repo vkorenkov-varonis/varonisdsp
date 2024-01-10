@@ -131,6 +131,16 @@ def parse_bool(value: str) -> Optional[bool]:
             return True
         if value == 'false':
             return False
+        if value == '1':
+            return True
+        if value == '0':
+            return False
+    return None
+
+def parse_bool_list(value: str) -> str:
+    if value:
+        parsed = [str(parse_bool(x.strip())) for x in value.split(sep=',')]
+        return ','.join(parsed)
     return None
 
 

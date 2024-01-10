@@ -20,13 +20,13 @@
         "ContainMaliciousExternalIP": null,
         "IPThreatTypes": "",
         "Asset": "dev3cf41.com(AD-dev3cf41.com)",
-        "AssetContainsFlaggedData": null,
-        "AssetContainsSensitiveData": null,
+        "AssetContainsFlaggedData": "False",
+        "AssetContainsSensitiveData": "False",
         "Platform": "Active Directory",
         "FileServerOrDomain": "AD-dev3cf41.com",
-        "EventUTC": "2023-12-19T16:30:00",
+        "EventUTC": "2023-12-19T16:30:00.000000+0000",
         "DeviceName": "dev3cf41col01",
-        "IngestTime": "2023-12-19T16:38:42",
+        "IngestTime": "2023-12-19T16:38:42.000000+0000",
         "Url": null
     },
     {
@@ -50,13 +50,13 @@
         "ContainMaliciousExternalIP": null,
         "IPThreatTypes": "",
         "Asset": "dev3cf41.com(AD-dev3cf41.com)",
-        "AssetContainsFlaggedData": null,
-        "AssetContainsSensitiveData": null,
+        "AssetContainsFlaggedData": "False",
+        "AssetContainsSensitiveData": "False",
         "Platform": "Active Directory",
         "FileServerOrDomain": "AD-dev3cf41.com",
-        "EventUTC": "2023-12-19T16:32:00",
+        "EventUTC": "2023-12-19T16:32:00.000000+0000",
         "DeviceName": "dev3cf41col01",
-        "IngestTime": "2023-12-19T16:38:39",
+        "IngestTime": "2023-12-19T16:38:39.000000+0000",
         "Url": null
     }
 ]
