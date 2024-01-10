@@ -137,6 +137,7 @@ def parse_bool(value: str) -> Optional[bool]:
             return False
     return None
 
+
 def parse_bool_list(value: str) -> str:
     if value:
         parsed = [str(parse_bool(x.strip())) for x in value.split(sep=',')]
