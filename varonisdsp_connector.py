@@ -166,6 +166,7 @@ class VaronisDspSaasConnector(BaseConnector):
 
         address = full_url if full_url else tools.urljoin(self._base_url, url_suffix)
         headers = headers if headers else self._headers
+        headers['varonis-integration'] = 'Splunk SOAR'
 
         resp = self._session.request(method,
                                      address,
