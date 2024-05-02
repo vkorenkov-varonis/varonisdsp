@@ -502,12 +502,14 @@
                     "data_type": "string",
                     "required": true,
                     "value_list": [
-                        "resolved",
-                        "misconfiguration",
-                        "threat model disabled or deleted",
-                        "account misclassification",
-                        "legitimate activity",
-                        "other"
+                        "none",
+                        "other",
+                        "begin activity",
+                        "true positive",
+                        "environment misconfiguration",
+                        "alert recently customized",
+                        "inaccurate alert logic",
+                        "authorized activity"
                     ],
                     "order": 0
                 },

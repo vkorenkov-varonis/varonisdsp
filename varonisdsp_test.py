@@ -138,13 +138,13 @@ class VaronisDSPTest(unittest.TestCase):
         self.connector._make_rest_call = MagicMock()
         param = {
             'alert_id': '232c60e4-0f74-4f86-998b-8752a41f7910,176ee376-252c-44e0-a2d6-f8c4443ddec1',
-            'close_reason': 'resolved'
+            'close_reason': 'other'
         }
         action_result = ActionResult(param)
         self.connector.add_action_result = MagicMock(return_value=action_result)
         json_data = {
             'AlertGuids': ['232c60e4-0f74-4f86-998b-8752a41f7910', '176ee376-252c-44e0-a2d6-f8c4443ddec1'],
-            'closeReasonId': CLOSE_REASONS['resolved'],
+            'closeReasonId': CLOSE_REASONS['other'],
             'statusId': ALERT_STATUSES['closed']
         }
 
